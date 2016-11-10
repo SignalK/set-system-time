@@ -1,5 +1,3 @@
-// const streamBundle = require('../streambundle');
-// const debug = require('debug')('signalk-server:interfaces:setSystemDateTime');
 
 module.exports = function(app) {
   var plugin = {
@@ -24,7 +22,7 @@ module.exports = function(app) {
 
 
   plugin.start = function(options) {
-    plugin.unsubscribes.push(app.streamBundle.getStream('navigation.datetime')
+    plugin.unsubscribes.push(app.streambundle.getSelfStream('navigation.datetime')
       .debounceImmediate(10* options.interval * 1000)
       .onValue(function(datetime) {
         var child
