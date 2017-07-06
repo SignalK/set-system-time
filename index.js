@@ -26,15 +26,15 @@ module.exports = function(app) {
       .debounceImmediate(10* options.interval * 1000)
       .onValue(function(datetime) {
         var child
-        if (process.platform == 'win32')
+        if (process.platform == 'win32') {
           console.error("Set-system-time supports only linux-like os's")
-        else
+        } else {
           var command = 'sudo date --iso-8601 -u -s "' + datetime + '"'
-          debug(command)
           child = require('child_process').spawn('sh', ['-c', command]);
-        child.stderr.on('data', function(data) {
-          console.error(data.toString());
-        })
+          child.stderr.on('data', function(data) {
+            console.error(data.toString());
+          })
+        }
       })
     )
   }
