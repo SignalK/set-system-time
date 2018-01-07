@@ -1,5 +1,5 @@
 {
-  "name": "set-system-time",
+  "name": "@signalk/set-system-time",
   "version": "1.0.0",
   "description": "Signal K server plugin to set system date & time on Signal K data, usually from a GPS",
   "main": "index.js",
