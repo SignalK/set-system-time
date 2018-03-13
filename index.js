@@ -27,6 +27,11 @@ module.exports = function (app) {
         type: 'number',
         title: 'Interval between updates in seconds (0 is once upon plugin start when datetime received)',
         default: 0
+      },
+      sudo: {
+        type: 'boolean',
+        title: 'Use sudo when setting the time',
+        default: true
       }
     }
   })
@@ -52,7 +57,11 @@ module.exports = function (app) {
         if (process.platform == 'win32') {
           console.error("Set-system-time supports only linux-like os's")
         } else {
-          const command = `if sudo -S -p '' echo -n < /dev/null 2> /dev/null ; then sudo date --iso-8601 -u -s "${datetime}" ; else exit 3 ; fi`
+          const useSudo = typeof options.sudo === 'undefined' || options.sudo
+          const setDate = `date --iso-8601 -u -s "${datetime}"`
+          const command = useSudo
+            ? `if sudo -S -p '' echo -n < /dev/null 2> /dev/null ; then sudo ${setDate} ; else exit 3 ; fi`
+            : setDate
           child = require('child_process').spawn('sh', ['-c', command])
           child.on('exit', value => {
             if (value === 0) {
@@ -66,7 +75,8 @@ module.exports = function (app) {
             }
           })
           child.stderr.on('data', function (data) {
-            errorLog(data.toString())
+            lastMessage = data.toString()
+            logError(lastMessage)
           })
         }
       })
