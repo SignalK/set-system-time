@@ -60,7 +60,7 @@ module.exports = function (app) {
           const useSudo = typeof options.sudo === 'undefined' || options.sudo
           const setDate = `date --iso-8601 -u -s "${datetime}"`
           const command = useSudo
-            ? `if sudo -S -p '' echo -n < /dev/null 2> /dev/null ; then sudo ${setDate} ; else exit 3 ; fi`
+            ? `if sudo -n date &> /dev/null ; then sudo ${setDate} ; else exit 3 ; fi`
             : setDate
           child = require('child_process').spawn('sh', ['-c', command])
           child.on('exit', value => {
