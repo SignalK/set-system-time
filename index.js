@@ -92,10 +92,13 @@ module.exports = function (app) {
 
   plugin.useNetworkTime = (options) => {
     if ( typeof options.preferNetworkTime !== 'undefined' && options.preferNetworkTime == true ){
-      const chronyCmd = "chronyc sources | cut -c2 | grep -ce '-\|*'";
-      validSources = require('child_process').execSync(cmd,{timeout:500});
+      const chronyCmd = "chronyc sources 2> /dev/null | cut -c2 | grep -ce '-\|*'";
+      try {
+        validSources = require('child_process').execSync(chronyCmd,{timeout:500});
+      } catch (e) {
+        return false
+      }
       if(validSources > 0 ){
-        logError('valid sources')
         return true
       }
     }
