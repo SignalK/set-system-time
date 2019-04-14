@@ -32,6 +32,11 @@ module.exports = function (app) {
         type: 'boolean',
         title: 'Use sudo when setting the time',
         default: true
+      },
+      preferNetworkTime: {
+        type: 'boolean',
+        title: 'Set system time only if no other source are available ( Only chrony decteded )',
+        default: true
       }
     }
   })
@@ -57,30 +62,47 @@ module.exports = function (app) {
         if (process.platform == 'win32') {
           console.error("Set-system-time supports only linux-like os's")
         } else {
-          const useSudo = typeof options.sudo === 'undefined' || options.sudo
-          const setDate = `date --iso-8601 -u -s "${datetime}"`
-          const command = useSudo
-            ? `if sudo -n date &> /dev/null ; then sudo ${setDate} ; else exit 3 ; fi`
-            : setDate
-          child = require('child_process').spawn('sh', ['-c', command])
-          child.on('exit', value => {
-            if (value === 0) {
-              count++
-              lastMessage = 'System time set to ' + datetime
-              debug(lastMessage)
-            } else if (value === 3) {
-              lastMessage =
-                'Passwordless sudo not available, can not set system time'
+          if( ! plugin.useNetworkTime(options) ){
+            const useSudo = typeof options.sudo === 'undefined' || options.sudo
+            const setDate = `date --iso-8601 -u -s "${datetime}"`
+            const command = useSudo
+              ? `if sudo -n date &> /dev/null ; then sudo ${setDate} ; else exit 3 ; fi`
+              : setDate
+            child = require('child_process').spawn('sh', ['-c', command])
+            child.on('exit', value => {
+              if (value === 0) {
+                count++
+                lastMessage = 'System time set to ' + datetime
+                debug(lastMessage)
+              } else if (value === 3) {
+                lastMessage =
+                  'Passwordless sudo not available, can not set system time'
+                logError(lastMessage)
+              }
+            })
+            child.stderr.on('data', function (data) {
+              lastMessage = data.toString()
               logError(lastMessage)
-            }
-          })
-          child.stderr.on('data', function (data) {
-            lastMessage = data.toString()
-            logError(lastMessage)
-          })
+            })
+          }
         }
       })
     )
+  }
+
+  plugin.useNetworkTime = (options) => {
+    if ( typeof options.preferNetworkTime !== 'undefined' && options.preferNetworkTime == true ){
+      const chronyCmd = "chronyc sources 2> /dev/null | cut -c2 | grep -ce '-\|*'";
+      try {
+        validSources = require('child_process').execSync(chronyCmd,{timeout:500});
+      } catch (e) {
+        return false
+      }
+      if(validSources > 0 ){
+        return true
+      }
+    }
+    return false
   }
 
   plugin.stop = function () {
