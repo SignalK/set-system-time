@@ -52,7 +52,7 @@ module.exports = function (app) {
   plugin.start = function (options) {
     let stream = app.streambundle.getSelfStream('navigation.datetime')
     if (options && options.interval > 0) {
-      stream = stream.debounceImmediate(10 * options.interval * 1000)
+      stream = stream.debounceImmediate(options.interval * 1000)
     } else {
       stream = stream.take(1)
     }
