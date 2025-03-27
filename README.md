@@ -17,3 +17,5 @@ To give `sudo` a no password access only to the `date` command, you can add the 
 pi ALL=(ALL) NOPASSWD: /bin/date
 ```
  --- *In this example, **pi** is the username that run the signalk server. Yours could be different.*
+
+Sudo is not available in Signal K Server image, but setting time should work without it with the latest Docker image.
