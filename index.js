@@ -35,7 +35,7 @@ module.exports = function (app) {
       },
       preferNetworkTime: {
         type: 'boolean',
-        title: 'Set system time only if no other source are available ( Only chrony detected )',
+        title: 'Set system time only if no other source is available (only chrony detected)',
         default: true
       }
     }
