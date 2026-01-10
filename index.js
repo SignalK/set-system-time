@@ -20,7 +20,7 @@ module.exports = function (app) {
     'Plugin that sets the system date & time from navigation.datetime delta messages'
 
   plugin.schema = () => ({
-    title: 'Set System Time with sudo',
+    title: 'Set System Time',
     type: 'object',
     properties: {
       interval: {
@@ -30,7 +30,7 @@ module.exports = function (app) {
       },
       sudo: {
         type: 'boolean',
-        title: 'Use sudo when setting the time',
+        title: 'Use sudo as fallback when setting time without sudo fails',
         default: true
       },
       preferNetworkTime: {
@@ -40,8 +40,6 @@ module.exports = function (app) {
       }
     }
   })
-
-  const SUDO_NOT_AVAILABLE = 'SUDO_NOT_AVAILABLE'
 
   let count = 0
   let lastMessage = ''
@@ -63,26 +61,50 @@ module.exports = function (app) {
           console.error("Set-system-time supports only linux-like os's")
         } else {
           if( ! plugin.useNetworkTime(options) ){
-            const useSudo = typeof options.sudo === 'undefined' || options.sudo
-            const setDate = `date --iso-8601 -u -s "${datetime}"`
-            const command = useSudo
-              ? `if sudo -n date &> /dev/null ; then sudo ${setDate} ; else exit 3 ; fi`
-              : setDate
-            child = require('child_process').spawn('sh', ['-c', command])
+            const useSudoFallback = typeof options.sudo === 'undefined' || options.sudo
+            // Convert ISO 8601 datetime to format compatible with both GNU date and BusyBox date
+            // e.g., "2024-01-10T17:55:03.000Z" → "2024-01-10 17:55:03"
+            const dateStr = datetime.replace('T', ' ').replace(/\.\d+Z?$|Z$/, '')
+            const setDate = `date -u -s "${dateStr}"`
+
+            // First try without sudo (works in Docker with setuid bit on /usr/bin/date)
+            child = require('child_process').spawn('sh', ['-c', setDate])
             child.on('exit', value => {
               if (value === 0) {
                 count++
                 lastMessage = 'System time set to ' + datetime
                 debug(lastMessage)
-              } else if (value === 3) {
+              } else if (useSudoFallback) {
+                // Try with sudo as fallback
+                const sudoCommand = `if sudo -n date &> /dev/null ; then sudo ${setDate} ; else exit 3 ; fi`
+                const sudoChild = require('child_process').spawn('sh', ['-c', sudoCommand])
+                sudoChild.on('exit', sudoValue => {
+                  if (sudoValue === 0) {
+                    count++
+                    lastMessage = 'System time set to ' + datetime + ' (using sudo)'
+                    debug(lastMessage)
+                  } else if (sudoValue === 3) {
+                    lastMessage =
+                      'Setting time failed. Passwordless sudo not available. Configure sudoers or use Docker image with setuid bit on /usr/bin/date'
+                    logError(lastMessage)
+                  }
+                })
+                sudoChild.stderr.on('data', function (data) {
+                  lastMessage = data.toString()
+                  logError(lastMessage)
+                })
+              } else {
                 lastMessage =
-                  'Passwordless sudo not available, can not set system time'
+                  'Setting time failed. Enable sudo fallback or use Docker image with setuid bit on /usr/bin/date'
                 logError(lastMessage)
               }
             })
             child.stderr.on('data', function (data) {
-              lastMessage = data.toString()
-              logError(lastMessage)
+              // Suppress stderr from first attempt if sudo fallback is enabled
+              if (!useSudoFallback) {
+                lastMessage = data.toString()
+                logError(lastMessage)
+              }
             })
           }
         }
