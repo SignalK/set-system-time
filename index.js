@@ -61,6 +61,12 @@ module.exports = function (app) {
           console.error("Set-system-time supports only linux-like os's")
         } else {
           if( ! plugin.useNetworkTime(options) ){
+            // Validate datetime format to prevent command injection
+            if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?$/.test(datetime)) {
+              lastMessage = 'Invalid datetime format received: ' + String(datetime).substring(0, 50)
+              logError(lastMessage)
+              return
+            }
             const useSudoFallback = typeof options.sudo === 'undefined' || options.sudo
             // Convert ISO 8601 datetime to format compatible with both GNU date and BusyBox date
             // e.g., "2024-01-10T17:55:03.000Z" → "2024-01-10 17:55:03"
