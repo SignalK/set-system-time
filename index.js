@@ -1,3 +1,6 @@
+const fs = require('fs')
+const path = require('path')
+
 module.exports = function (app) {
   const logError =
     app.error ||
@@ -43,20 +46,121 @@ module.exports = function (app) {
 
   let count = 0
   let lastMessage = ''
+  let lastGoodTime = null
   plugin.statusMessage = function () {
     return `${lastMessage} ${count > 0 ? '- system time set ' + count + ' times' : ''}`
   }
 
+  const minimumYear = 2026
+  const lastGoodGraceSeconds = 300
+
+  function getLastGoodTimePath() {
+    const dataDir = typeof app.getDataDirPath === 'function' ? app.getDataDirPath() : null
+    if (!dataDir) {
+      return null
+    }
+    return path.join(dataDir, 'last-good-time.json')
+  }
+
+  function loadLastGoodTime() {
+    const filePath = getLastGoodTimePath()
+    if (!filePath || !fs.existsSync(filePath)) {
+      return null
+    }
+    try {
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'))
+      const datetime = data && data.datetime
+      if (!datetime || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?$/.test(datetime)) {
+        return null
+      }
+      const parsedDate = new Date(datetime)
+      if (Number.isNaN(parsedDate.getTime())) {
+        return null
+      }
+      return datetime
+    } catch (err) {
+      logError('Failed to read last-good time: ' + err.message)
+      return null
+    }
+  }
+
+  function saveLastGoodTime(datetime) {
+    const filePath = getLastGoodTimePath()
+    if (!filePath) {
+      return
+    }
+    try {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true })
+      fs.writeFileSync(filePath, JSON.stringify({ datetime }), 'utf8')
+    } catch (err) {
+      logError('Failed to write last-good time: ' + err.message)
+    }
+  }
+
+  function setSystemTime(datetime, useSudoFallback, sourceLabel) {
+    const dateStr = datetime.replace('T', ' ').replace(/\.\d+Z?$|Z$/, '')
+    const setDate = `date -u -s "${dateStr}"`
+    const label = sourceLabel ? ` (${sourceLabel})` : ''
+
+    const child = require('child_process').spawn('sh', ['-c', setDate])
+    child.on('exit', value => {
+      if (value === 0) {
+        count++
+        lastGoodTime = datetime
+        saveLastGoodTime(datetime)
+        lastMessage = 'System time set to ' + datetime + label
+        debug(lastMessage)
+      } else if (useSudoFallback) {
+        const sudoCommand = `if sudo -n date &> /dev/null ; then sudo ${setDate} ; else exit 3 ; fi`
+        const sudoChild = require('child_process').spawn('sh', ['-c', sudoCommand])
+        sudoChild.on('exit', sudoValue => {
+          if (sudoValue === 0) {
+            count++
+            lastGoodTime = datetime
+            saveLastGoodTime(datetime)
+            lastMessage = 'System time set to ' + datetime + ' (using sudo)' + label
+            debug(lastMessage)
+          } else if (sudoValue === 3) {
+            lastMessage =
+              'Setting time failed. Passwordless sudo not available. Configure sudoers or use Docker image with setuid bit on /usr/bin/date'
+            logError(lastMessage)
+          }
+        })
+        sudoChild.stderr.on('data', function (data) {
+          lastMessage = data.toString()
+          logError(lastMessage)
+        })
+      } else {
+        lastMessage =
+          'Setting time failed. Enable sudo fallback or use Docker image with setuid bit on /usr/bin/date'
+        logError(lastMessage)
+      }
+    })
+    child.stderr.on('data', function (data) {
+      if (!useSudoFallback) {
+        lastMessage = data.toString()
+        logError(lastMessage)
+      }
+    })
+  }
+
   plugin.start = function (options) {
+    lastGoodTime = loadLastGoodTime()
     let stream = app.streambundle.getSelfStream('navigation.datetime')
     if (options && options.interval > 0) {
       stream = stream.debounceImmediate(options.interval * 1000)
     } else {
       stream = stream.take(1)
     }
+    if (!plugin.useNetworkTime(options) && lastGoodTime) {
+      const lastGoodDate = new Date(lastGoodTime)
+      if (!Number.isNaN(lastGoodDate.getTime()) && Date.now() < lastGoodDate.getTime()) {
+        const useSudoFallback = typeof options.sudo === 'undefined' || options.sudo
+        setSystemTime(lastGoodTime, useSudoFallback, 'from last-good time')
+      }
+    }
     plugin.unsubscribes.push(
       stream.onValue(function (datetime) {
-        var child
         if (process.platform == 'win32') {
           console.error("Set-system-time supports only linux-like os's")
         } else {
@@ -67,51 +171,28 @@ module.exports = function (app) {
               logError(lastMessage)
               return
             }
+            const parsedDate = new Date(datetime)
+            if (Number.isNaN(parsedDate.getTime())) {
+              lastMessage = 'Invalid datetime value received: ' + String(datetime).substring(0, 50)
+              logError(lastMessage)
+              return
+            }
+            if (parsedDate.getUTCFullYear() < minimumYear) {
+              lastMessage = `Ignoring GPS time (${datetime}) older than minimum year ${minimumYear}`
+              logError(lastMessage)
+              return
+            }
+            if (lastGoodTime) {
+              const lastGoodDate = new Date(lastGoodTime)
+              const lastGoodMillis = lastGoodDate.getTime()
+              if (!Number.isNaN(lastGoodMillis) && parsedDate.getTime() + lastGoodGraceSeconds * 1000 < lastGoodMillis) {
+                lastMessage = `Ignoring GPS time (${datetime}) older than last-good time ${lastGoodTime} (grace ${lastGoodGraceSeconds}s)`
+                logError(lastMessage)
+                return
+              }
+            }
             const useSudoFallback = typeof options.sudo === 'undefined' || options.sudo
-            // Convert ISO 8601 datetime to format compatible with both GNU date and BusyBox date
-            // e.g., "2024-01-10T17:55:03.000Z" → "2024-01-10 17:55:03"
-            const dateStr = datetime.replace('T', ' ').replace(/\.\d+Z?$|Z$/, '')
-            const setDate = `date -u -s "${dateStr}"`
-
-            // First try without sudo (works in Docker with setuid bit on /usr/bin/date)
-            child = require('child_process').spawn('sh', ['-c', setDate])
-            child.on('exit', value => {
-              if (value === 0) {
-                count++
-                lastMessage = 'System time set to ' + datetime
-                debug(lastMessage)
-              } else if (useSudoFallback) {
-                // Try with sudo as fallback
-                const sudoCommand = `if sudo -n date &> /dev/null ; then sudo ${setDate} ; else exit 3 ; fi`
-                const sudoChild = require('child_process').spawn('sh', ['-c', sudoCommand])
-                sudoChild.on('exit', sudoValue => {
-                  if (sudoValue === 0) {
-                    count++
-                    lastMessage = 'System time set to ' + datetime + ' (using sudo)'
-                    debug(lastMessage)
-                  } else if (sudoValue === 3) {
-                    lastMessage =
-                      'Setting time failed. Passwordless sudo not available. Configure sudoers or use Docker image with setuid bit on /usr/bin/date'
-                    logError(lastMessage)
-                  }
-                })
-                sudoChild.stderr.on('data', function (data) {
-                  lastMessage = data.toString()
-                  logError(lastMessage)
-                })
-              } else {
-                lastMessage =
-                  'Setting time failed. Enable sudo fallback or use Docker image with setuid bit on /usr/bin/date'
-                logError(lastMessage)
-              }
-            })
-            child.stderr.on('data', function (data) {
-              // Suppress stderr from first attempt if sudo fallback is enabled
-              if (!useSudoFallback) {
-                lastMessage = data.toString()
-                logError(lastMessage)
-              }
-            })
+            setSystemTime(datetime, useSudoFallback, '')
           }
         }
       })
