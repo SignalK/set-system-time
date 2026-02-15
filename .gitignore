@@ -30,6 +30,13 @@ build/Release
 node_modules
 jspm_packages
 
+# TypeScript build output
+dist
+*.tsbuildinfo
+
+# Lint cache
+.eslintcache
+
 # Optional npm cache directory
 .npm
 
