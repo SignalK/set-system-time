@@ -52,6 +52,7 @@ module.exports = function (app) {
   }
 
   const minimumYear = 2026
+  const lastGoodGraceSeconds = 300
 
   function getLastGoodTimePath() {
     const dataDir = typeof app.getDataDirPath === 'function' ? app.getDataDirPath() : null
@@ -183,8 +184,9 @@ module.exports = function (app) {
             }
             if (lastGoodTime) {
               const lastGoodDate = new Date(lastGoodTime)
-              if (!Number.isNaN(lastGoodDate.getTime()) && parsedDate.getTime() < lastGoodDate.getTime()) {
-                lastMessage = `Ignoring GPS time (${datetime}) older than last-good time ${lastGoodTime}`
+              const lastGoodMillis = lastGoodDate.getTime()
+              if (!Number.isNaN(lastGoodMillis) && parsedDate.getTime() + lastGoodGraceSeconds * 1000 < lastGoodMillis) {
+                lastMessage = `Ignoring GPS time (${datetime}) older than last-good time ${lastGoodTime} (grace ${lastGoodGraceSeconds}s)`
                 logError(lastMessage)
                 return
               }
