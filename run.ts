@@ -1,7 +1,7 @@
 const Bacon = require('baconjs')
 const datetimeStream = new Bacon.Bus()
 
-const setSystemTime = require('./')({
+const plugin = require('./index')({
   streambundle: {
     getSelfStream: path => {
       if (path === 'navigation.datetime') {
@@ -11,10 +11,10 @@ const setSystemTime = require('./')({
   }
 })
 
-setSystemTime.start()
+plugin.start()
 setImmediate(() => {
   datetimeStream.push(new Date().toISOString())
 })
 setTimeout(() => {
-  console.log(setSystemTime.statusMessage())
+  console.log(plugin.statusMessage())
 }, 200)
