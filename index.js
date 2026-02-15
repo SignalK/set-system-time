@@ -67,11 +67,16 @@ module.exports = function (app) {
               logError(lastMessage)
               return
             }
+            const parsedDate = new Date(datetime)
+            if (Number.isNaN(parsedDate.getTime())) {
+              lastMessage = 'Invalid datetime value received: ' + String(datetime).substring(0, 50)
+              logError(lastMessage)
+              return
+            }
             const useSudoFallback = typeof options.sudo === 'undefined' || options.sudo
-            // Convert ISO 8601 datetime to format compatible with both GNU date and BusyBox date
-            // e.g., "2024-01-10T17:55:03.000Z" → "2024-01-10 17:55:03"
-            const dateStr = datetime.replace('T', ' ').replace(/\.\d+Z?$|Z$/, '')
-            const setDate = `date -u -s "${dateStr}"`
+            // Use epoch seconds to avoid BusyBox date format incompatibilities
+            const epochSeconds = Math.floor(parsedDate.getTime() / 1000)
+            const setDate = `date -u -s "@${epochSeconds}"`
 
             // First try without sudo (works in Docker with setuid bit on /usr/bin/date)
             child = require('child_process').spawn('sh', ['-c', setDate])
