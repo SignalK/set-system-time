@@ -53,15 +53,8 @@ module.exports = function (app) {
 
   const minimumYear = 2026
 
-  function getDataDir() {
-    if (typeof app.getDataDir === 'function') {
-      return app.getDataDir(plugin.id) || app.getDataDir()
-    }
-    return null
-  }
-
   function getLastGoodTimePath() {
-    const dataDir = getDataDir()
+    const dataDir = typeof app.getDataDirPath === 'function' ? app.getDataDirPath() : null
     if (!dataDir) {
       return null
     }
