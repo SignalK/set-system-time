@@ -9,6 +9,6 @@
   "author": "teppo.kurki@iki,fi",
   "license": "Apache-2.0",
   "devDependencies": {
-    "baconjs": "^1.0.1"
+    "baconjs": "^3.0.0"
   }
 }
