@@ -122,7 +122,7 @@ module.exports = function (app) {
     if ( typeof options.preferNetworkTime !== 'undefined' && options.preferNetworkTime == true ){
       const chronyCmd = "chronyc sources 2> /dev/null | cut -c2 | grep -ce '-\|*'";
       try {
-        validSources = require('child_process').execSync(chronyCmd,{timeout:500});
+        validSources = require('child_process').execSync(chronyCmd,{timeout:500, stdio: ['ignore', 'pipe', 'ignore']});
       } catch (e) {
         return false
       }
